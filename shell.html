@@ -8,19 +8,67 @@
   html, body {
     margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden;
     -webkit-user-select: none; user-select: none;
+    font-family: monospace;
   }
   body { display: flex; align-items: center; justify-content: center; }
   canvas {
-    touch-action: none;          /* let the game see touchmove, not the browser */
+    touch-action: none;
     max-width: 100vw; max-height: 100vh;
     image-rendering: pixelated;
+    display: none; /* shown when the game starts */
   }
+  canvas.running { display: block; }
+  #loader {
+    color: #0f0; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  #loader.hidden { display: none; }
+  #spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #033; border-top: 4px solid #0f0;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #status { font-size: 14px; min-height: 20px; }
 </style>
 </head>
 <body>
+<div id="loader">
+  <div id="spinner"></div>
+  <div>KOULES</div>
+  <div id="status">Loading...</div>
+</div>
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 <script>
-  var Module = { canvas: document.getElementById('canvas') };
+  var loader = document.getElementById('loader');
+  var statusEl = document.getElementById('status');
+  var canvas = document.getElementById('canvas');
+  var Module = {
+    canvas: canvas,
+    setStatus: function(text) {
+      if (text) {
+        // Emscripten status like "Downloading...", "Compiling..."
+        statusEl.textContent = text.replace(/\.\.\./g, '…');
+      }
+    },
+    onRuntimeInitialized: function() {
+      // Game code is ready; hide loader once first frame presents.
+      // Fallback: hide after a short delay in case rAF is throttled.
+      var shown = false;
+      function show() {
+        if (shown) return; shown = true;
+        loader.classList.add('hidden');
+        canvas.classList.add('running');
+      }
+      requestAnimationFrame(function wait() {
+        // The SDL present happens on the Emscripten main loop; give it
+        // a couple of frames then reveal.
+        requestAnimationFrame(function() { requestAnimationFrame(show); });
+      });
+      setTimeout(show, 3000);
+    }
+  };
 </script>
 {{{ SCRIPT }}}
 </body>
