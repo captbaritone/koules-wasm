@@ -154,6 +154,11 @@ queue_sound (int k)
 {
   if (audio_dev == 0 || k < 0 || k >= NUM_SOUNDS || sound_data[k] == NULL)
     return;
+  /* If the browser's AudioContext is still suspended (no user gesture
+   * yet), queued samples pile up and all fire at once when it unlocks.
+   * Drop new effects while more than ~0.5s of audio is backed up. */
+  if (SDL_GetQueuedAudioSize (audio_dev) > 4000)
+    return;
   SDL_QueueAudio (audio_dev, sound_data[k], sound_len[k]);
 }
 
