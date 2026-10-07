@@ -38,7 +38,7 @@ jobs:
           mkdir -p public
           mkdir -p public/sounds
           cp sounds/*.raw public/sounds/
-          cp koules.html koules.js koules.wasm koules.data public/
+          cp koules.html koules.js koules.wasm public/
           cp public/koules.html public/index.html
 
       - name: Upload Pages artifact
