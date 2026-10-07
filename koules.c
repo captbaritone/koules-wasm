@@ -1617,10 +1617,17 @@ game ()
       if (VnewClk.tv_usec < VendSleep)
 	VendSleep -= 1000000;
       wait = (VfTime - VnewClk.tv_usec + VendSleep);
+#ifdef __EMSCRIPTEN__
+      /* The browser paces our frames; draw every tick. (The original
+       * skipped frames when running behind, which under Emscripten's
+       * wall-clock timing starved the screen entirely.) */
+      draw_objects (1);
+#else
       if (wait > 0 || tbreak)
 	draw_objects (1);
       else
 	draw_objects (0);
+#endif
       gettimeofday (&VnewClk, NULL);
       if (VnewClk.tv_usec < VendSleep)
 	VendSleep -= 1000000;
