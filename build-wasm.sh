@@ -32,7 +32,6 @@ emcc $SOURCES \
   -O2 \
   -s USE_SDL=2 \
   -s ALLOW_MEMORY_GROWTH=1 \
-  --preload-file sounds \
   --shell-file shell.html \
   -o koules.html
 

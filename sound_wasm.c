@@ -15,8 +15,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #include <SDL.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #define NUM_SOUNDS 7
 
@@ -41,6 +45,43 @@ test_sound (void)
 {
   /* No child process to watch anymore. */
 }
+
+#ifdef __EMSCRIPTEN__
+/* Async fetch callback: store the downloaded sample. */
+static void
+sound_fetched (void *arg, void *data, int size)
+{
+  int i = (int)(intptr_t)arg;
+  if (i < 0 || i >= NUM_SOUNDS || size <= 0)
+    return;
+  sound_data[i] = malloc (size);
+  if (sound_data[i])
+    {
+      memcpy (sound_data[i], data, size);
+      sound_len[i] = size;
+    }
+}
+
+static void
+sound_fetch_failed (void *arg)
+{
+  /* Keep silent; the game plays without this effect. */
+}
+
+/* Fetch sounds in the background after startup; the game runs fine
+ * (silently) until they arrive. */
+static void
+fetch_sounds_async (void)
+{
+  int i;
+  for (i = 0; i < NUM_SOUNDS; i++)
+    {
+      if (sound_data[i] == NULL)
+	emscripten_async_wget_data (sound_files[i], (void *)(intptr_t)i,
+				    sound_fetched, sound_fetch_failed);
+    }
+}
+#endif
 
 void
 init_sound (void)
@@ -71,8 +112,14 @@ init_sound (void)
 
       if (!f)
 	{
+	  /* Not preloaded; try the async fetch below (Emscripten) or
+	   * stay silent. */
+#ifdef __EMSCRIPTEN__
+	  continue;
+#else
 	  fprintf (stderr, "sound_wasm: couldn't open %s\n", sound_files[i]);
 	  continue;
+#endif
 	}
       fseek (f, 0, SEEK_END);
       len = ftell (f);
@@ -87,6 +134,11 @@ init_sound (void)
 	}
       fclose (f);
     }
+
+#ifdef __EMSCRIPTEN__
+  /* Sounds not bundled; fetch them in the background. */
+  fetch_sounds_async ();
+#endif
 
   /* Browsers start the AudioContext suspended until the first user
    * gesture; Emscripten unlocks it automatically and queued samples
