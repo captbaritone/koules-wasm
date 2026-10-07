@@ -35,6 +35,8 @@ jobs:
       - name: Stage Pages artifact
         run: |
           mkdir -p public
+          mkdir -p public/sounds
+          cp sounds/*.raw public/sounds/
           cp koules.html koules.js koules.wasm koules.data public/
           cp public/koules.html public/index.html
 
