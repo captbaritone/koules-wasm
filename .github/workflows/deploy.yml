@@ -29,7 +29,7 @@ jobs:
       - name: Build with Emscripten
         run: |
           emcc --version
-          ./build-wasm.sh
+          bash build-wasm.sh
           ls -la koules.html koules.js koules.wasm koules.data
 
       - name: Stage Pages artifact
