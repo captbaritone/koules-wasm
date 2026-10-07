@@ -423,7 +423,11 @@ main (int argc, char *argv[])
   keys[1][2] = SDL_SCANCODE_A;
   keys[1][3] = SDL_SCANCODE_D;
 
+#ifndef __EMSCRIPTEN__
+  /* The scrolling intro is ~2 minutes of unskippable animation; on web
+   * go straight to the menu. */
   starwars ();
+#endif
 
 #ifdef NETSUPPORT
   if (client)
