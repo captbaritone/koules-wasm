@@ -30,7 +30,8 @@ jobs:
         run: |
           emcc --version
           bash build-wasm.sh
-          ls -la koules.html koules.js koules.wasm koules.data
+          ls -la koules.html koules.js koules.wasm
+          ls -la sounds/*.raw
 
       - name: Stage Pages artifact
         run: |
