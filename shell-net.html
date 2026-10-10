@@ -51,14 +51,18 @@
   /* ---- network transport (prototype) ----------------------------
    * sock_ws.c expects the host to provide KoulesTransport.send and to
    * push received frames into KoulesNet.deliver. Here that is one
-   * WebSocket to the dedicated server; in a Cloudflare Durable Object
-   * the same two hooks would be backed by the DO's socket instead.
+   * WebSocket to the dedicated server, which is either the Node host
+   * or a Cloudflare Durable Object -- the client cannot tell.
    *
-   *   koules-net.html?server=ws://localhost:8200
+   * Where to connect, in order of preference:
+   *   ?server=ws://host:port   an explicit server (the Node host)
+   *   ?room=name               a room on this origin (the Worker)
+   * and with neither, the room named "lobby" on this origin.
    */
   var params = new URLSearchParams(location.search);
+  var room = (params.get('room') || 'lobby').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || 'lobby';
   var serverUrl = params.get('server') ||
-    (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':8200';
+    (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/room/' + room;
   var sendQueue = [];
   var ws = new WebSocket(serverUrl);
   ws.binaryType = 'arraybuffer';
@@ -67,11 +71,13 @@
     sendQueue = [];
   };
   ws.onmessage = function(e) {
-    if (globalThis.KoulesNet) globalThis.KoulesNet.deliver('server', new Uint8Array(e.data));
+    /* Module.KoulesNet appears once the game opens its first socket. */
+    if (Module.KoulesNet) Module.KoulesNet.deliver('server', new Uint8Array(e.data));
   };
-  ws.onclose = function() { statusEl && (statusEl.textContent = 'Disconnected'); };
-  globalThis.KoulesTransport = {
-    isServer: false,
+  ws.onerror = function() {
+    fail('Cannot reach the server.', serverUrl);
+  };
+  var koulesTransport = {
     send: function(addr, bytes) {
       /* A client only ever talks to the one server, so addr is ignored.
        * Frames sent before the socket opens are held, not dropped: the
@@ -82,10 +88,23 @@
   };
 
   var loader = document.getElementById('loader');
+  /* Once we have something to say, the loader stays up and says it
+   * rather than handing over to an empty canvas. */
+  var failed = false;
+  function fail(message, hint) {
+    failed = true;
+    var spinner = document.getElementById('spinner');
+    if (spinner) spinner.hidden = true;
+    if (statusEl) statusEl.innerHTML =
+      message + (hint ? '<br><small>' + hint + '</small>' : '');
+    loader.classList.remove('hidden');
+    canvas.classList.remove('running');
+  }
   var statusEl = document.getElementById('status');
   var canvas = document.getElementById('canvas');
   var Module = {
     arguments: ['-C', 'server'],
+    KoulesTransport: koulesTransport,
     canvas: canvas,
     setStatus: function(text) {
       if (text) {
@@ -93,12 +112,25 @@
         statusEl.textContent = text.replace(/\.\.\./g, '…');
       }
     },
+    print: function(text) {
+      console.log(text);
+      /* The client gives up before it ever opens a window, so the
+       * loader is the only thing the player can see. Without this the
+       * canvas is revealed on schedule and they just get black. */
+      if (/refused/i.test(text)) {
+        fail('That game has already started.',
+             'Open a different room to start a new one.');
+      } else if (/timed out/i.test(text)) {
+        fail('No answer from the server.',
+             'It may have gone away; try reloading.');
+      }
+    },
     onRuntimeInitialized: function() {
       // Game code is ready; hide loader once first frame presents.
       // Fallback: hide after a short delay in case rAF is throttled.
       var shown = false;
       function show() {
-        if (shown) return; shown = true;
+        if (shown || failed) return; shown = true;
         loader.classList.add('hidden');
         canvas.classList.add('running');
       }

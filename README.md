@@ -46,6 +46,29 @@ python3 -m http.server 8080         # then open, in two tabs:
 # http://localhost:8080/koules-net.html?server=ws://localhost:8200
 ```
 
+### Rooms, on Cloudflare
+
+`cf/` runs the same server as a Durable Object, one per room. A Worker
+serves the client and routes `/room/<name>` to `idFromName(name)`, which
+is deterministic, so everyone who opens the same link lands in the same
+game. The DO is single-threaded and globally unique for its name, so
+there is exactly one simulation per room and nothing to coordinate.
+
+```sh
+cd cf && npm install && npx wrangler dev
+# then open, in two tabs:
+# http://127.0.0.1:8787/?room=abc
+```
+
+The server links the headless backend in `null/` rather than SDL -- it
+never draws, so there is nothing to link a renderer for. That keeps the
+server wasm at ~130KB instead of ~1MB, and avoids Emscripten's html5
+library, which dereferences `document` at module scope in a runtime that
+has no DOM.
+
+A room locks when its game starts, as it always did; latecomers are now
+told so instead of waiting on a black screen.
+
 Each client picks REGISTER PLAYERS, then START GAME; the server starts
 once every connected client has registered. Measured traffic is about
 1.2 KB/s down (25 snapshots/sec, ~48 bytes each) and under 100 B/s up.

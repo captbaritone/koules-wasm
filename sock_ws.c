@@ -18,23 +18,25 @@
  * server's one-UDP-socket-per-client model maps onto one WebSocket per
  * client rather neatly.
  *
- * The WebSocket itself is deliberately NOT created here. The host
- * supplies a transport object before the module starts:
+ * The WebSocket itself is deliberately NOT created here. The host hands
+ * the module a transport when it creates it:
  *
- *     globalThis.KoulesTransport = {
- *       isServer: <bool>,
- *       send: function (addr, bytes) { ... }
- *     }
+ *     createKoules({ KoulesTransport: { send: function (addr, bytes) {} } })
  *
- * and pushes received frames in with
+ * and pushes received frames into the module it got back:
  *
- *     globalThis.KoulesNet.deliver(addr, bytes)
+ *     mod.KoulesNet.deliver(addr, bytes)
  *
  * where `addr` identifies the peer -- the string "server" for a client,
  * or a per-connection id on the server. That keeps the C side free of
  * any environment assumptions, so the same build runs against a Node
- * `ws` server today and a Cloudflare Durable Object later, with the
+ * `ws` server, a Cloudflare Durable Object, or a browser tab, with the
  * host object being the only thing that differs.
+ *
+ * Note that this state hangs off the Emscripten module, NOT off
+ * globalThis: several Durable Objects share one isolate, so two game
+ * rooms in the same isolate would otherwise overwrite each other's
+ * sockets.
  *
  * Reliability: WebSocket is ordered and reliable, where UDP was
  * neither. The protocol copes fine -- position packets are whole-state
@@ -81,27 +83,72 @@ static int      kw_started;
 
 EM_JS (void, kwjs_start, (void),
 {
-  if (globalThis.KoulesNet)
+  if (Module.KoulesNet)
     return;
-  var net = globalThis.KoulesNet = {
+  var net = Module.KoulesNet = {
     queues: {},			/* dst port -> array of frames */
+    bound: {},			/* dst port -> 1 once a socket owns it */
+    wellKnown: {},		/* dst port -> 1 if anyone may write to it */
+    owner: {},			/* dst port -> the peer allowed to write */
     lastAddr: String(),
     lastPort: 0,
     deliver: function (addr, bytes)
       {
 	if (!bytes || bytes.length < 4)
 	  return;
-	var sp = bytes[0] | (bytes[1] << 8);
 	var dp = bytes[2] | (bytes[3] << 8);
+	/* Drop frames for ports no socket is listening on, so a peer
+	 * cannot make us queue unbounded data on made-up ports. */
+	if (!net.bound[dp])
+	  return;
+	/* The contact port is public; every other socket belongs to the
+	 * peer that first used it, so one client cannot write into
+	 * another client's socket. */
+	if (!net.wellKnown[dp])
+	  {
+	    if (net.owner[dp] === undefined)
+	      net.owner[dp] = addr;
+	    else if (net.owner[dp] !== addr)
+	      return;
+	  }
 	var q = net.queues[dp] || (net.queues[dp] = []);
-	q.push ({ addr: addr, port: sp, data: bytes.subarray (4) });
+	/* A peer that stops reading must not grow our heap without
+	 * bound; this is a datagram socket, so dropping is in character. */
+	if (q.length > 256)
+	  q.shift ();
+	q.push ({ addr: addr, port: bytes[0] | (bytes[1] << 8),
+		  data: bytes.subarray (4) });
       }
   };
 });
 
+/* Tell the JS side a socket exists. `well_known` marks the port clients
+ * are expected to contact cold (the server's listening port). */
+EM_JS (void, kwjs_bind, (int vport, int well_known),
+{
+  var net = Module.KoulesNet;
+  if (!net)
+    return;
+  net.bound[vport] = 1;
+  if (well_known)
+    net.wellKnown[vport] = 1;
+});
+
+EM_JS (void, kwjs_unbind, (int vport),
+{
+  var net = Module.KoulesNet;
+  if (!net)
+    return;
+  delete net.bound[vport];
+  delete net.queues[vport];
+  delete net.owner[vport];
+  delete net.wellKnown[vport];
+});
+
 EM_JS (int, kwjs_readable, (int vport),
 {
-  var q = globalThis.KoulesNet && globalThis.KoulesNet.queues[vport];
+  var net = Module.KoulesNet;
+  var q = net && net.queues[vport];
   return (q && q.length) ? 1 : 0;
 });
 
@@ -109,7 +156,7 @@ EM_JS (int, kwjs_readable, (int vport),
  * sender. Returns the payload length, or -1 when nothing is queued. */
 EM_JS (int, kwjs_recv, (int vport, char *buf, int max),
 {
-  var net = globalThis.KoulesNet;
+  var net = Module.KoulesNet;
   var q = net && net.queues[vport];
   if (!q || !q.length)
     return -1;
@@ -126,7 +173,7 @@ EM_JS (int, kwjs_recv, (int vport, char *buf, int max),
 EM_JS (int, kwjs_send, (const char *host, int sport, int dport,
 			const char *buf, int len),
 {
-  var t = globalThis.KoulesTransport;
+  var t = Module.KoulesTransport;
   if (!t || !t.send)
     return -1;
   var frame = new Uint8Array (len + 4);
@@ -148,13 +195,14 @@ EM_JS (int, kwjs_send, (const char *host, int sport, int dport,
 
 EM_JS (void, kwjs_lastaddr, (char *out, int max),
 {
-  var a = (globalThis.KoulesNet && globalThis.KoulesNet.lastAddr) || String();
-  stringToUTF8 (a, out, max);
+  var net = Module.KoulesNet;
+  stringToUTF8 ((net && net.lastAddr) || String(), out, max);
 });
 
 EM_JS (int, kwjs_lastport, (void),
 {
-  return (globalThis.KoulesNet && globalThis.KoulesNet.lastPort) | 0;
+  var net = Module.KoulesNet;
+  return (net && net.lastPort) | 0;
 });
 
 /*--------------------------------------------------------------------
@@ -195,6 +243,10 @@ CreateDgramSocket (int port)
 	memset (&kw_socks[i], 0, sizeof (kw_socks[i]));
 	kw_socks[i].used = 1;
 	kw_socks[i].port = port ? port : kw_next_ephemeral++;
+	/* A socket bound to a port the caller named is one peers are
+	 * meant to contact cold; an ephemeral one belongs to whoever
+	 * the handshake hands it to. */
+	kwjs_bind (kw_socks[i].port, port ? 1 : 0);
 	return KW_FDBASE + i;
       }
   errno = EMFILE;
@@ -208,6 +260,7 @@ SocketClose (int fd)
 
   if (!s)
     return -1;
+  kwjs_unbind (s->port);
   s->used = 0;
   return 0;
 }

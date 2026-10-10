@@ -440,8 +440,13 @@ main (int argc, char *argv[])
   keys[1][3] = SDL_SCANCODE_D;
 
   /* The scrolling intro animates in the browser now that its pacing
-   * loop yields (see wasm_compat.h); any key skips it. */
-  starwars ();
+   * loop yields (see wasm_compat.h); any key skips it. Joining a
+   * network game skips it outright: you came to play with someone who
+   * is already waiting, not to watch the titles. */
+#ifdef NETSUPPORT
+  if (!client)
+#endif
+    starwars ();
 
 #ifdef NETSUPPORT
   if (client)

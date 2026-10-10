@@ -1,0 +1,12 @@
+{
+  "name": "koules-rooms",
+  "private": true,
+  "description": "Cloudflare Worker: one Durable Object per Koules game room",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.86.0"
+  }
+}

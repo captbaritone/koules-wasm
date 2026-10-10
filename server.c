@@ -85,6 +85,9 @@ char            acceled[5];
  * same object and clang (-fno-common since 10) rejects. */
 static unsigned char Clientmap[5];
 static int      Socket;
+/* Set once the game has started: the room no longer takes new players,
+ * but still answers them so they are told why. */
+static int      gamelocked;
 /*static int      tbreak; */
 #define BUFFERSIZE 65536
 static unsigned char buffer[BUFFERSIZE];
@@ -345,7 +348,13 @@ sreg (int client, unsigned char *message, int s)
   if (registered == connected)
     {
       printf ("All clients sucesfully registered. Entering configure mode\n");
-      close (Socket), Socket = -1;
+      /* The original closed the contact socket here, which locks the
+       * game to the players already present. That is fine on a LAN
+       * where everyone gathers before you start, but on the web people
+       * join by opening a link, and a closed socket means their client
+       * waits ~200s on a black screen before giving up. Keep listening
+       * and refuse latecomers explicitly instead (see contact()). */
+      gamelocked = 1;
       PUTHEAD (CMENU2);
       ssendallreliable (buffer, HEADSIZE);
     }
@@ -717,6 +726,18 @@ contact ()
    "Transaction can not be completted\n"
    "Good bye :)\n"); */
 	return 0;
+    }
+  if (gamelocked)
+    {
+      unsigned char   reply[REPLYSIZE];
+
+      printf ("Refusing a latecomer: the game has already started.\n");
+      PUTLONG (reply, 0);	/* port 0: the protocol's "refused" */
+      PUTSHORT (reply + 4, GAMEWIDTH);
+      PUTSHORT (reply + 6, GAMEHEIGHT);
+      DgramSend (Socket, DgramLastaddr (), DgramLastport (),
+		 (char *) reply, REPLYSIZE);
+      return 0;
     }
   printf ("Client contacted me!\n");
   {

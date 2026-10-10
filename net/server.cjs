@@ -43,13 +43,16 @@ function toBytes(data) {
   return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 }
 
-globalThis.KoulesTransport = {
-  isServer: true,
+const transport = {
   send(addr, bytes) {
     const sock = peers.get(addr);
     if (sock && sock.readyState === 1) sock.send(bytes);
   },
 };
+
+/* Set once the wasm module exists; its network state hangs off the
+ * module instance, not off globalThis. */
+let koules = null;
 
 const wss = new WebSocketServer({ port: PORT });
 
@@ -62,9 +65,8 @@ wss.on('connection', (sock) => {
   sock.on('message', (data) => {
     /* The module creates KoulesNet on its first socket; until then
      * there is nothing listening and the client will retry. */
-    const net = globalThis.KoulesNet;
-    if (!net) return;
-    net.deliver(addr, toBytes(data));
+    if (!koules || !koules.KoulesNet) return;
+    koules.KoulesNet.deliver(addr, toBytes(data));
   });
   sock.on('close', () => {
     peers.delete(addr);
@@ -80,9 +82,11 @@ const createKoules = require(path.join(__dirname, 'koules-server.js'));
 
 createKoules({
   arguments: ['-S'].concat(gameArgs),
+  KoulesTransport: transport,
   print: (t) => console.log('[koules] ' + t),
   printErr: (t) => console.error('[koules] ' + t),
-}).then(() => {
+}).then((mod) => {
+  koules = mod;
   /* Asyncify suspends inside the server loop and returns here; the
    * loop keeps running off the event loop from now on. */
   console.log('[net] koules server loop running');
