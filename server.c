@@ -80,7 +80,9 @@ static long     sizes[MAXPACKET];
 static long     isizes[MAXPACKET];
 char            acceled[5];
 #endif
-struct control  controls[MAXROCKETS];
+/* controls[] belongs to koules.c; koules.h declares it extern. This was
+ * a second tentative definition, which older compilers merged into the
+ * same object and clang (-fno-common since 10) rejects. */
 static unsigned char Clientmap[5];
 static int      Socket;
 /*static int      tbreak; */

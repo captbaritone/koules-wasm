@@ -30,9 +30,14 @@
  * up so a sub-millisecond sleep still yields rather than spinning. */
 #define usleep(us) emscripten_sleep (((unsigned long) (us) + 999) / 1000)
 
+/* sleep() has the same problem, and client.c uses it while retrying the
+ * server handshake. */
+#define sleep(s) emscripten_sleep ((unsigned long) (s) * 1000)
+
 /* Loops that wait on input have no sleep of their own to borrow. One
  * frame's worth of yield keeps them responsive without burning CPU. */
 #define koules_yield() emscripten_sleep (10)
+#define koules_yield_us(us) emscripten_sleep (((unsigned long) (us) + 999) / 1000)
 
 /* Move a save file between MEMFS and localStorage so settings and the
  * unlocked level survive a reload; see storage_wasm.c. */
@@ -44,6 +49,7 @@ void            koules_storage_sync_out (const char *path);
 /* Native builds block the way they always did, and save to a real
  * home directory. */
 #define koules_yield() do { } while (0)
+#define koules_yield_us(us) usleep (us)
 #define koules_storage_sync_in(path) do { (void) (path); } while (0)
 #define koules_storage_sync_out(path) do { (void) (path); } while (0)
 

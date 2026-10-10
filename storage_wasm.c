@@ -49,7 +49,7 @@ EM_JS (void, koules_storage_sync_out, (const char *path),
     {
       var p = UTF8ToString (path);
       var d = FS.readFile (p);
-      var s = '';
+      var s = String();
       for (var i = 0; i < d.length; i++)
 	s += String.fromCharCode (d[i]);
       localStorage.setItem ('koules:' + p, btoa (s));

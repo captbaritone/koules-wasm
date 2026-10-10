@@ -47,7 +47,10 @@ unsigned char  *buffer;
 #define Debug(text,num)
 #define Debug1(text)
 #endif
-extern void     accel (int);
+/* koules.c: accel (int i, double howmuch), howmuch in <0,1>. This
+ * declaration still had the pre-"accel by deflection" signature, so the
+ * call below passed whatever happened to be in the argument register. */
+extern void     accel (int, double);
 
 /*bit counter */
 static int      c = 1;
@@ -206,7 +209,7 @@ read_object (int i, unsigned char *buffer, int nodata)
     {
       int             n;
       for (n = 0; n < nodata; n++)
-	accel (i);
+	accel (i, 1.0);	       /* the server already decided it thrusts */
     }
   Debug1 ("\n");
   return (buffer);

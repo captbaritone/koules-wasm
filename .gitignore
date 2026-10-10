@@ -15,5 +15,8 @@ koules.html
 koules.js
 koules.wasm
 koules.data
+koules-net.html
+koules-net.js
+koules-net.wasm
 # Decoded from sounds/*.raw.b64 at build time
 sounds/*.raw

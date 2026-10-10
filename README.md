@@ -21,8 +21,37 @@ source ~/emsdk/emsdk_env.sh
 # serve this directory over HTTP and open koules.html
 ```
 
-Network multiplayer is compiled out (browsers can't open raw TCP sockets);
-single player, local multiplayer, and sound are all in.
+`koules.html` is single player and local multiplayer, with sound.
+
+## Network multiplayer (prototype)
+
+The original game's network mode is a dedicated authoritative server:
+`server.c` runs the simulation at 25Hz and sends bit-packed state
+snapshots, and clients only render and send input. It speaks UDP, which
+a browser cannot, so `sock_ws.c` replaces `sock.c` and carries the same
+datagrams over a WebSocket. `server.c` and `client.c` are unmodified.
+
+The server is compiled to WebAssembly and runs headless. It never draws
+— it tells clients to play the cutscenes instead — so the same build
+runs under Node today and could run in a Cloudflare Durable Object by
+replacing only the host glue in `net/server.cjs`.
+
+```sh
+source ~/emsdk/emsdk_env.sh
+./build-net.sh
+(cd net && npm install)
+
+node net/server.cjs --port 8200     # dedicated server
+python3 -m http.server 8080         # then open, in two tabs:
+# http://localhost:8080/koules-net.html?server=ws://localhost:8200
+```
+
+Each client picks REGISTER PLAYERS, then START GAME; the server starts
+once every connected client has registered. Measured traffic is about
+1.2 KB/s down (25 snapshots/sec, ~48 bytes each) and under 100 B/s up.
+
+Note that the client does no prediction — it draws exactly what the
+server last sent — so input lag is a full round trip, as it always was.
 
 ## License
 

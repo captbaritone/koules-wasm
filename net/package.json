@@ -1,0 +1,8 @@
+{
+  "name": "koules-net-prototype",
+  "private": true,
+  "description": "Local WebSocket host for the Koules dedicated server (prototype)",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

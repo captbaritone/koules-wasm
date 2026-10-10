@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Koules (network)</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    font-family: monospace;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas {
+    touch-action: none;
+    /* The game renders a fixed 640x480 buffer. Scale it to fill the
+     * viewport in whichever direction runs out first, keeping 4:3 and
+     * the hard pixel edges. !important because SDL sets inline sizes
+     * on the canvas when it creates the window. */
+    width: min(100vw, 133.333vh) !important;
+    height: auto !important;
+    aspect-ratio: 640 / 480;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: none; /* shown when the game starts */
+  }
+  canvas.running { display: block; }
+  #loader {
+    color: #0f0; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  #loader.hidden { display: none; }
+  #spinner {
+    width: 40px; height: 40px;
+    border: 4px solid #033; border-top: 4px solid #0f0;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #status { font-size: 14px; min-height: 20px; }
+</style>
+</head>
+<body>
+<div id="loader">
+  <div id="spinner"></div>
+  <div>KOULES</div>
+  <div id="status">Connecting...</div>
+</div>
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<script>
+  /* ---- network transport (prototype) ----------------------------
+   * sock_ws.c expects the host to provide KoulesTransport.send and to
+   * push received frames into KoulesNet.deliver. Here that is one
+   * WebSocket to the dedicated server; in a Cloudflare Durable Object
+   * the same two hooks would be backed by the DO's socket instead.
+   *
+   *   koules-net.html?server=ws://localhost:8200
+   */
+  var params = new URLSearchParams(location.search);
+  var serverUrl = params.get('server') ||
+    (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':8200';
+  var sendQueue = [];
+  var ws = new WebSocket(serverUrl);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = function() {
+    for (var i = 0; i < sendQueue.length; i++) ws.send(sendQueue[i]);
+    sendQueue = [];
+  };
+  ws.onmessage = function(e) {
+    if (globalThis.KoulesNet) globalThis.KoulesNet.deliver('server', new Uint8Array(e.data));
+  };
+  ws.onclose = function() { statusEl && (statusEl.textContent = 'Disconnected'); };
+  globalThis.KoulesTransport = {
+    isServer: false,
+    send: function(addr, bytes) {
+      /* A client only ever talks to the one server, so addr is ignored.
+       * Frames sent before the socket opens are held, not dropped: the
+       * game starts its handshake the moment it starts. */
+      if (ws.readyState === 1) ws.send(bytes);
+      else if (ws.readyState === 0) sendQueue.push(bytes);
+    }
+  };
+
+  var loader = document.getElementById('loader');
+  var statusEl = document.getElementById('status');
+  var canvas = document.getElementById('canvas');
+  var Module = {
+    arguments: ['-C', 'server'],
+    canvas: canvas,
+    setStatus: function(text) {
+      if (text) {
+        // Emscripten status like "Downloading...", "Compiling..."
+        statusEl.textContent = text.replace(/\.\.\./g, '…');
+      }
+    },
+    onRuntimeInitialized: function() {
+      // Game code is ready; hide loader once first frame presents.
+      // Fallback: hide after a short delay in case rAF is throttled.
+      var shown = false;
+      function show() {
+        if (shown) return; shown = true;
+        loader.classList.add('hidden');
+        canvas.classList.add('running');
+      }
+      requestAnimationFrame(function wait() {
+        // The SDL present happens on the Emscripten main loop; give it
+        // a couple of frames then reveal.
+        requestAnimationFrame(function() { requestAnimationFrame(show); });
+      });
+      setTimeout(show, 3000);
+    }
+  };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
