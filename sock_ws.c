@@ -92,6 +92,14 @@ EM_JS (void, kwjs_start, (void),
     owner: {},			/* dst port -> the peer allowed to write */
     lastAddr: String(),
     lastPort: 0,
+    gone: [],			/* peers whose socket has closed */
+    /* UDP gave the game no disconnect signal, so the original could
+     * only time a client out and then tear the whole server down. A
+     * WebSocket host knows, and says so here. */
+    peerGone: function (addr)
+      {
+	net.gone.push (addr);
+      },
     deliver: function (addr, bytes)
       {
 	if (!bytes || bytes.length < 4)
@@ -143,6 +151,16 @@ EM_JS (void, kwjs_unbind, (int vport),
   delete net.queues[vport];
   delete net.owner[vport];
   delete net.wellKnown[vport];
+});
+
+/* Pops one departed peer's id, or returns 0 when there are none. */
+EM_JS (int, kwjs_take_gone, (char *out, int max),
+{
+  var net = Module.KoulesNet;
+  if (!net || !net.gone.length)
+    return 0;
+  stringToUTF8 (net.gone.shift (), out, max);
+  return 1;
 });
 
 EM_JS (int, kwjs_readable, (int vport),
@@ -204,6 +222,14 @@ EM_JS (int, kwjs_lastport, (void),
   var net = Module.KoulesNet;
   return (net && net.lastPort) | 0;
 });
+
+/* Drain the host's disconnect notices. server.c calls this once a frame
+ * and hands each id to ServerPeerGone. */
+int
+DgramTakeGone (char *buf, int max)
+{
+  return kwjs_take_gone (buf, max);
+}
 
 /*--------------------------------------------------------------------
  * sock.h implementation

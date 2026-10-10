@@ -70,6 +70,7 @@ wss.on('connection', (sock) => {
   });
   sock.on('close', () => {
     peers.delete(addr);
+    if (koules && koules.KoulesNet) koules.KoulesNet.peerGone(addr);
     console.log(`[net] ${addr} disconnected (${peers.size} online)`);
   });
   sock.on('error', () => {});

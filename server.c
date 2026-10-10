@@ -85,9 +85,14 @@ char            acceled[5];
  * same object and clang (-fno-common since 10) rejects. */
 static unsigned char Clientmap[5];
 static int      Socket;
-/* Set once the game has started: the room no longer takes new players,
+/* Set once someone commits to starting: the room stops taking players,
  * but still answers them so they are told why. */
 static int      gamelocked;
+/* Set when every client has gone; server_loop returns so the host can
+ * reuse the room for a fresh game. */
+static int      roomempty;
+
+
 /*static int      tbreak; */
 #define BUFFERSIZE 65536
 static unsigned char buffer[BUFFERSIZE];
@@ -120,9 +125,71 @@ static struct conn
     long            rrcount;	/*counter of reiable messages received from client */
     long            ircount;	/*counter of reiable messages sent by client */
     int             ready;	/*is client ready to receive messages? */
+    int             alive;	/*still connected? cleared by ServerPeerGone */
+    int             registered;	/*has sent SREGISTER (lobby phase 1) */
+    int             started;	/*has sent SSTART (lobby phase 2) */
     /*int wpos; *//*want server receive possition informations? */
   }
 conn[6]        , *connp;
+
+/* Lobby consensus. The original counted SREGISTER/SSTART arrivals in
+ * function-level statics and compared them against `connected`, which
+ * only ever grows -- so one client leaving mid-lobby made the
+ * comparison unsatisfiable and nobody could ever start again. Ask the
+ * clients that are still here instead. */
+static int
+all_registered (void)
+{
+  int             i, live = 0;
+
+  for (i = 0; i < connected; i++)
+    if (conn[i].alive)
+      {
+	live++;
+	if (!conn[i].registered)
+	  return 0;
+      }
+  return live > 0;
+}
+
+static int
+all_started (void)
+{
+  int             i, live = 0;
+
+  for (i = 0; i < connected; i++)
+    if (conn[i].alive)
+      {
+	live++;
+	if (!conn[i].started)
+	  return 0;
+      }
+  return live > 0;
+}
+
+/* The host (net/server.cjs, cf/src/room.js) calls this when a client's
+ * WebSocket closes. UDP had no such signal, so the original could only
+ * time a client out and then Quit() the whole server; a transport that
+ * knows about disconnects can do better. */
+void
+ServerPeerGone (const char *addr)
+{
+  int             i, live = 0;
+
+  for (i = 0; i < connected; i++)
+    {
+      if (conn[i].alive && !strcmp (conn[i].hostname, addr))
+	{
+	  printf ("Client %i (%s) disconnected.\n", i, addr);
+	  conn[i].alive = 0;
+	  conn[i].ready = 0;
+	}
+      if (conn[i].alive)
+	live++;
+    }
+  if (connected > 0 && live == 0)
+    roomempty = 1;
+}
 struct s_table
   {
     void            (*func) (int client, unsigned char *message, int size);
@@ -315,8 +382,13 @@ sready (int client, unsigned char *message, int s)
   if (gamemode == PREGAME)
     {
       int             i;
+      /* This read conn[client] rather than conn[i], so it only ever
+       * tested the client that had just reported in -- whose flag was
+       * set two lines above. The game therefore began as soon as the
+       * *first* client finished its cutscene, with everyone else still
+       * watching the crawl. */
       for (i = 0; i < connected; i++)
-	if (!conn[client].ready)
+	if (conn[i].alive && !conn[i].ready)
 	  return;
       gamemode = GAME;
     }
@@ -325,8 +397,8 @@ void
 sreg (int client, unsigned char *message, int s)
 {
   int             n, i;
-  static int      registered = 0;
-  registered++;
+
+  conn[client].registered = 1;
   GETCHAR (message, n)
     PUTHEAD (CREG);
   printf ("Client %i trying to register %i players\n", client, n);
@@ -345,16 +417,16 @@ sreg (int client, unsigned char *message, int s)
   PUTHEAD (CPLAYERS);
   PUTCHAR (buffer + 1, nrockets)
     ssendallreliable (buffer, HEADSIZE + 1);
-  if (registered == connected)
+  if (all_registered ())
     {
-      printf ("All clients sucesfully registered. Entering configure mode\n");
-      /* The original closed the contact socket here, which locks the
-       * game to the players already present. That is fine on a LAN
-       * where everyone gathers before you start, but on the web people
-       * join by opening a link, and a closed socket means their client
-       * waits ~200s on a black screen before giving up. Keep listening
-       * and refuse latecomers explicitly instead (see contact()). */
-      gamelocked = 1;
+      printf ("Everyone here has registered. Entering configure mode\n");
+      /* Deliberately NOT locking the room here. The original closed the
+       * contact socket at this point, which shut out anyone who had not
+       * arrived yet -- fine on a LAN where you gather before starting,
+       * wrong on the web where joining *is* opening a link. The room
+       * closes when somebody actually starts the game; see sstart. */
+      for (i = 0; i < connected; i++)
+	conn[i].started = 0;	/* a new arrival re-opens the start vote */
       PUTHEAD (CMENU2);
       ssendallreliable (buffer, HEADSIZE);
     }
@@ -377,19 +449,25 @@ SEffect (int level, int nos)
 void
 sstart (int client, unsigned char *message, int s)
 {
-  static int      registered = 0;
-  registered++;
+  conn[client].started = 1;
   lastlevel = serverstartlevel;
   printf ("Client %i registered to game\n", client);
+  if (!gamelocked)
+    {
+      /* Someone has committed to starting, so the lobby closes now.
+       * Latecomers get a clean refusal from contact(). */
+      printf ("Room closed to new players.\n");
+      gamelocked = 1;
+    }
   /*statistics (); */
   /*PUTHEAD (CLEVEL);
      PUTCHAR (buffer+1,lastlevel)
      PUTCHAR (buffer+2,0)
      ready[client]=0;
      ssend ( client,buffer, HEADSIZE+2); */
-  if (registered == connected)
+  if (all_started ())
     {
-      printf ("All clients sucesfully registered. Starting game\n");
+      printf ("Everyone has started. Starting game\n");
       PUTHEAD (CGAME);
       ssendallreliable (buffer, HEADSIZE);
       gamemode = GAME;
@@ -769,6 +847,9 @@ contact ()
       }
   }
   connp->rcount = 1;
+  connp->alive = 1;
+  connp->registered = 0;
+  connp->started = 0;
   if ((sock = CreateDgramSocket (0)) == -1)
     {
       error ("Cannot create datagram socket ");
@@ -964,6 +1045,22 @@ server_loop ()
   gamemode = MENU;
   while (1)
     {
+      {
+	/* The transport tells us who has gone; UDP never could. */
+	char            gone[256];
+
+	while (DgramTakeGone (gone, sizeof (gone)))
+	  ServerPeerGone (gone);
+      }
+      if (roomempty)
+	{
+	  /* Everyone has gone. Returning unwinds main(), which ends the
+	   * Asyncify timer chain, so the host can drop this instance and
+	   * boot a fresh one for the next game in this room. */
+	  printf ("Room empty; shutting the server down.\n");
+	  closeSockets ();
+	  return;
+	}
       ecounter--;
       if (ecounter < 0)
 	{

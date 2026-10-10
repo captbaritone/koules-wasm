@@ -66,8 +66,11 @@ server wasm at ~130KB instead of ~1MB, and avoids Emscripten's html5
 library, which dereferences `document` at module scope in a runtime that
 has no DOM.
 
-A room locks when its game starts, as it always did; latecomers are now
-told so instead of waiting on a black screen.
+A room stays open until somebody starts the game, so people can arrive
+while the lobby fills. Once started it is closed, and latecomers are
+told so rather than waiting on a black screen. When the last player
+leaves, the server shuts down and the next arrival gets a fresh game in
+the same room.
 
 Each client picks REGISTER PLAYERS, then START GAME; the server starts
 once every connected client has registered. Measured traffic is about

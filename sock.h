@@ -18,4 +18,7 @@ extern int CreateDgramSocket (int);
 extern int SocketClose (int);
 extern char *DgramLastaddr (void);
 extern int DgramLastport (void);
+/* WebSocket transports know when a peer has gone; UDP did not. Returns
+ * 1 and fills buf with the peer id, or 0 when there is nothing queued. */
+extern int DgramTakeGone (char *buf, int max);
 #endif

@@ -15,10 +15,11 @@
 import createKoules from '../koules-server.mjs';
 import wasmModule from '../koules-server.wasm';
 
-/* Once the last player leaves there is nobody to simulate for, but the
- * game loop would happily keep ticking (and billing). Give stragglers a
- * moment to reconnect, then drop the object. */
-const IDLE_SHUTDOWN_MS = 30_000;
+/* Once the last player leaves there is nobody to simulate for. The
+ * server notices too and returns from its loop, which ends the Asyncify
+ * timer chain -- so this is only about how long we hold the finished
+ * instance before starting a fresh game for whoever shows up next. */
+const IDLE_RESET_MS = 30_000;
 
 export class Room {
   constructor(state, env) {
@@ -58,8 +59,12 @@ export class Room {
     });
 
     const drop = () => {
-      this.peers.delete(addr);
-      if (this.peers.size === 0) this.scheduleShutdown();
+      if (!this.peers.delete(addr)) return;   /* close and error both fire */
+      /* Tell the game, so it can free that player's slot instead of
+       * waiting on a timeout that used to take the whole server down. */
+      const net = this.koules && this.koules.KoulesNet;
+      if (net) net.peerGone(addr);
+      if (this.peers.size === 0) this.scheduleReset();
     };
     serverSide.addEventListener('close', drop);
     serverSide.addEventListener('error', drop);
@@ -112,17 +117,19 @@ export class Room {
     return this.booting;
   }
 
-  scheduleShutdown() {
+  /* Drop the finished server so the next arrival starts a new game in
+   * this same room. server.c returns from server_loop once every client
+   * has gone, so the instance we are letting go of is already idle --
+   * nothing is left ticking. */
+  scheduleReset() {
     if (this.idleTimer !== null) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       if (this.peers.size > 0) return;
-      /* There is no way to stop server.c's `while (1)` from out here,
-       * so discard the whole object: the next player to use this room
-       * name gets a fresh server, which is what they want anyway. */
-      if (typeof this.state.abort === 'function') {
-        this.state.abort('room empty');
-      }
-    }, IDLE_SHUTDOWN_MS);
+      this.koules = null;
+      this.booting = null;
+      this.nextPeer = 1;
+      console.log('[room] empty; next player gets a fresh game');
+    }, IDLE_RESET_MS);
   }
 }
 

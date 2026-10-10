@@ -140,6 +140,15 @@ int SetSocketNonBlocking (int fd, int flag)
   return (-1);
 }	
 
+/* A UDP socket is never told that a peer has gone, so there is never
+ * anything to report. The WebSocket transport (sock_ws.c) overrides
+ * this with something useful. */
+int DgramTakeGone(char *buf, int max)
+{
+	(void)buf; (void)max;
+	return 0;
+}
+
 int GetSocketError(int fd)
 {
 	socklen_t size=sizeof(errno);
