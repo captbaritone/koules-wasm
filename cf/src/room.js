@@ -30,6 +30,7 @@ export class Room {
     this.koules = null;
     this.booting = null;
     this.idleTimer = null;
+    this.pending = [];
   }
 
   async fetch(request) {
@@ -53,9 +54,17 @@ export class Room {
     }
 
     serverSide.addEventListener('message', (event) => {
+      const bytes = toBytes(event.data);
       const net = this.koules && this.koules.KoulesNet;
-      if (!net) return; /* not booted yet; the client retries */
-      net.deliver(addr, toBytes(event.data));
+      if (!net) {
+        /* The server is still booting -- either the very first player,
+         * or the first one back after the room reset itself. The game
+         * client does retry its handshake, but dropping the packet
+         * costs it a second for no reason, so hold it instead. */
+        if (this.pending.length < 64) this.pending.push([addr, bytes]);
+        return;
+      }
+      net.deliver(addr, bytes);
     });
 
     const drop = () => {
@@ -111,6 +120,9 @@ export class Room {
       /* Resolves once main() suspends inside the server loop's first
        * sleep; the loop keeps running off the event loop from here. */
       this.koules = mod;
+      /* Anything that arrived while we were booting. */
+      for (const [addr, bytes] of this.pending) mod.KoulesNet.deliver(addr, bytes);
+      this.pending = [];
       return mod;
     });
 
@@ -127,6 +139,7 @@ export class Room {
       if (this.peers.size > 0) return;
       this.koules = null;
       this.booting = null;
+      this.pending = [];
       this.nextPeer = 1;
       console.log('[room] empty; next player gets a fresh game');
     }, IDLE_RESET_MS);
