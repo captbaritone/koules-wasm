@@ -13,8 +13,15 @@
   body { display: flex; align-items: center; justify-content: center; }
   canvas {
     touch-action: none;
-    max-width: 100vw; max-height: 100vh;
+    /* The game renders a fixed 640x480 buffer. Scale it to fill the
+     * viewport in whichever direction runs out first, keeping 4:3 and
+     * the hard pixel edges. !important because SDL sets inline sizes
+     * on the canvas when it creates the window. */
+    width: min(100vw, 133.333vh) !important;
+    height: auto !important;
+    aspect-ratio: 640 / 480;
     image-rendering: pixelated;
+    image-rendering: crisp-edges;
     display: none; /* shown when the game starts */
   }
   canvas.running { display: block; }

@@ -25,6 +25,14 @@ int             pressed[SDL_NUM_SCANCODES];
 int             n_pressed = 0;
 int             last_pressed;
 
+/* Set when a button went down, cleared when MouseButtons () reports it.
+ * The menu polls the button state once per 25Hz frame and acts on the
+ * frame where it goes from down to up, so a click shorter than 40ms
+ * used to fall between two polls and do nothing -- which is most
+ * clicks, and every tap on a touchscreen. Latching the press makes the
+ * poll see it exactly once, and the release on the frame after. */
+static int      mouse_clicked = 0;
+
 /*--------------------------------------------------------------------
  * Touch controls: a virtual 8-way joystick for player 1.
  *
@@ -86,66 +94,126 @@ DrawTouchOverlay (VScreenType screen)
   filledCircleColor (screen, joy_x, joy_y, 18, 0xffffff90);
 }
 
+/* Forget every held key. Used when the window loses focus: the browser
+ * stops sending us key events while another element has focus, so the
+ * matching KEYUP never arrives and the ship would thrust forever. */
+void
+ClearKeys (void)
+{
+  int             j;
+
+  for (j = 0; j < SDL_NUM_SCANCODES; j++)
+    pressed[j] = 0;
+  n_pressed = 0;
+  last_pressed = 0;
+}
+
+/* Forget one held key, for code that has consumed a keypress and does
+ * not want to see it again (ESC leaving the game would otherwise be
+ * read a second time by the menu underneath). */
+void
+ClearKey (int key)
+{
+  if (key < 0 || key >= SDL_NUM_SCANCODES)
+    return;
+  if (pressed[key])
+    {
+      pressed[key] = 0;
+      if (n_pressed > 0)
+	n_pressed--;
+    }
+  if (last_pressed == key)
+    last_pressed = 0;
+}
+
 void
 UpdateInput (void)
 {
   SDL_Event       event;
-  int             val = -1;
+  int             sc;
 
-  if (!SDL_PollEvent (&event))
-    return;
-
-  switch (event.type)
+  /* Drain the queue rather than taking a single event per call. The
+   * game calls us once per 25Hz frame, while a browser happily
+   * produces mouse-motion events several times faster; taking one at a
+   * time let the queue grow without bound and input fell seconds
+   * behind. Key state changes still stop the drain, one per call, so
+   * that a press and its release always land in different frames --
+   * the key-remapping menu reads GetKey() once a frame and detects the
+   * release that way. */
+  while (SDL_PollEvent (&event))
     {
-    case SDL_FINGERDOWN:
-      if (!joy_active)
+      switch (event.type)
 	{
-	  joy_active = 1;
-	  joy_finger = event.tfinger.fingerId;
-	  joy_ox = joy_x = (int) (event.tfinger.x * MAPWIDTH);
-	  joy_oy = joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	  joy_update (0, 0);
+	case SDL_FINGERDOWN:
+	  if (!joy_active)
+	    {
+	      joy_active = 1;
+	      joy_finger = event.tfinger.fingerId;
+	      joy_ox = joy_x = (int) (event.tfinger.x * MAPWIDTH);
+	      joy_oy = joy_y = (int) (event.tfinger.y * MAPHEIGHT);
+	      joy_update (0, 0);
+	    }
+	  break;
+	case SDL_FINGERMOTION:
+	  if (joy_active && event.tfinger.fingerId == joy_finger)
+	    {
+	      joy_x = (int) (event.tfinger.x * MAPWIDTH);
+	      joy_y = (int) (event.tfinger.y * MAPHEIGHT);
+	      joy_update (joy_x - joy_ox, joy_y - joy_oy);
+	    }
+	  break;
+	case SDL_FINGERUP:
+	  if (joy_active && event.tfinger.fingerId == joy_finger)
+	    joy_release ();
+	  break;
+	case SDL_KEYDOWN:
+	  /* SDL2 delivers repeat events for held keys; the original
+	   * SDL 1.2 backend never saw them (repeat off by default).
+	   * Skip them -- they carry no state change. */
+	  if (event.key.repeat)
+	    break;
+	  sc = event.key.keysym.scancode;
+	  if (sc < 0 || sc >= SDL_NUM_SCANCODES)
+	    break;
+	  last_pressed = sc;
+	  /* Only count real transitions, so n_pressed can never drift
+	   * out of step with pressed[] and strand Pressed() at true. */
+	  if (!pressed[sc])
+	    {
+	      pressed[sc] = 1;
+	      n_pressed++;
+	    }
+	  return;
+	case SDL_KEYUP:
+	  sc = event.key.keysym.scancode;
+	  if (sc < 0 || sc >= SDL_NUM_SCANCODES)
+	    break;
+	  last_pressed = 0;
+	  if (pressed[sc])
+	    {
+	      pressed[sc] = 0;
+	      if (n_pressed > 0)
+		n_pressed--;
+	    }
+	  return;
+	case SDL_MOUSEBUTTONDOWN:
+	  n_pressed++;
+	  mouse_clicked = 1;
+	  break;
+	case SDL_MOUSEBUTTONUP:
+	  if (n_pressed > 0)
+	    n_pressed--;
+	  break;
+	case SDL_WINDOWEVENT:
+	  if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+	    {
+	      ClearKeys ();
+	      joy_release ();
+	    }
+	  break;
+	default:
+	  break;
 	}
-      break;
-    case SDL_FINGERMOTION:
-      if (joy_active && event.tfinger.fingerId == joy_finger)
-	{
-	  joy_x = (int) (event.tfinger.x * MAPWIDTH);
-	  joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	  joy_update (joy_x - joy_ox, joy_y - joy_oy);
-	}
-      break;
-    case SDL_FINGERUP:
-      if (joy_active && event.tfinger.fingerId == joy_finger)
-	joy_release ();
-      break;
-    case SDL_KEYDOWN:
-      /* SDL2 delivers repeat events for held keys; the original SDL 1.2
-       * backend never saw them (repeat off by default). Ignore them so
-       * press counts stay balanced. */
-      if (event.key.repeat)
-	return;
-      val = 1;
-      last_pressed = event.key.keysym.scancode;
-      break;
-    case SDL_KEYUP:
-      val = 0;
-      last_pressed = 0;
-      break;
-    case SDL_MOUSEBUTTONDOWN:
-      n_pressed++;
-      break;
-    case SDL_MOUSEBUTTONUP:
-      n_pressed--;
-      break;
-    default:
-      return;
-    }
-
-  if (val >= 0)
-    {
-      n_pressed += val ? 1 : -1;
-      pressed[event.key.keysym.scancode] = val;
     }
 }
 
@@ -163,7 +231,7 @@ Pressed (void)
 {
   int             j;
 
-  if (n_pressed != 0)
+  if (n_pressed > 0)
     return true;
   for (j = 0; j < 4; j++)
     if (tjoy_keys[j])
@@ -255,6 +323,18 @@ MouseY (void)
 int
 MouseButtons (void)
 {
-  return SDL_GetMouseState (NULL, NULL);
+  int             live = SDL_GetMouseState (NULL, NULL);
+
+  if (live)
+    {
+      mouse_clicked = 0;
+      return live;
+    }
+  if (mouse_clicked)
+    {
+      mouse_clicked = 0;
+      return SDL_BUTTON_LMASK;
+    }
+  return 0;
 }
 #endif

@@ -9,3 +9,11 @@ koules.sndsrv.linux
 koules.svga
 koules.sdl
 xkoules
+
+# Emscripten build output (built by build-wasm.sh / CI)
+koules.html
+koules.js
+koules.wasm
+koules.data
+# Decoded from sounds/*.raw.b64 at build time
+sounds/*.raw

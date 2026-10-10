@@ -66,6 +66,8 @@ void            UpdateInput (void);
 int             GetKey (void);
 bool            Pressed (void);
 bool            IsPressed (int);
+void            ClearKey (int);
+void            ClearKeys (void);
 void            DrawTouchOverlay (VScreenType);
 int             IsPressedDown (void);
 int             IsPressedEnter (void);

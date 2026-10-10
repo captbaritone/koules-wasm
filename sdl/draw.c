@@ -174,6 +174,9 @@ SGetPixel (int x, int y)
   Uint32          color;
   Uint32         *pixels;
 
+  if (x < 0 || y < 0 || x >= current->w || y >= current->h)
+    return 0;
+
   SDL_LockSurface (current);
   pixels = current->pixels;
   SDL_GetRGB (pixels[y * current->w + x], current->format, &r, &g, &b);
@@ -184,12 +187,11 @@ SGetPixel (int x, int y)
   color |= (Uint32) g << 16;
   color |= (Uint32) b << 8;
 
-  do
-    {
-      if (palette[c] == color)
-	return c;
-    }
-  while (c++ < COLORS);
+  /* palette[] holds COLORS entries; the original walked one past the
+   * end of it. */
+  for (c = 0; c < COLORS; c++)
+    if (palette[c] == color)
+      return c;
 
   return 0;
 }

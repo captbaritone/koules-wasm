@@ -266,8 +266,11 @@ starwars ()
       if (Pressed ())
 	{
 	  fadeout ();
+	  /* Yield while waiting for the key to come up; see
+	   * wasm_compat.h. */
 	  while (Pressed ())
 	    {
+	      koules_yield ();
 	      UpdateInput ();
 	    }
 	  return;

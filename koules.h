@@ -24,6 +24,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+/* Browser-safe usleep()/koules_yield(); a no-op for native builds. The
+ * wasm build also force-includes this via emcc -include, so that the
+ * usleep macro is in place before any system header is pulled in. */
+#include "wasm_compat.h"
 #include <math.h>
 #include <sys/types.h>
 #include <fcntl.h>

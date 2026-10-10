@@ -90,6 +90,14 @@ create_icon ()
 void
 uninitialize (void)
 {
+  if (starbackground)
+    SDL_FreeSurface (starbackground);
+  if (background)
+    SDL_FreeSurface (background);
+  if (backscreen)
+    SDL_FreeSurface (backscreen);
+  if (sdl_screen)
+    SDL_FreeSurface (sdl_screen);
   if (sdl_texture)
     SDL_DestroyTexture (sdl_texture);
   if (sdl_renderer)
@@ -130,7 +138,15 @@ initialize (void)
       fprintf (stderr, "%s\n", SDL_GetError ());
       return -1;
     }
-  SDL_SetWindowIcon (sdl_window, create_icon ());
+  {
+    SDL_Surface    *icon = create_icon ();
+
+    if (icon)
+      {
+	SDL_SetWindowIcon (sdl_window, icon);
+	SDL_FreeSurface (icon);
+      }
+  }
   SDL_SetWindowTitle (sdl_window, "Koules for SDL version 1.4 by Jan Hubicka");
 
   sdl_renderer = SDL_CreateRenderer (sdl_window, -1, 0);
@@ -423,11 +439,9 @@ main (int argc, char *argv[])
   keys[1][2] = SDL_SCANCODE_A;
   keys[1][3] = SDL_SCANCODE_D;
 
-#ifndef __EMSCRIPTEN__
-  /* The scrolling intro is ~2 minutes of unskippable animation; on web
-   * go straight to the menu. */
+  /* The scrolling intro animates in the browser now that its pacing
+   * loop yields (see wasm_compat.h); any key skips it. */
   starwars ();
-#endif
 
 #ifdef NETSUPPORT
   if (client)

@@ -1063,8 +1063,13 @@ process_keys ()
       forceBlitting ();
 #endif
       tbreak = 1;
+      /* Wait for P to be let go, then for any key to resume. Both loops
+       * must yield: in a browser the events they are waiting for are
+       * delivered by JS callbacks that cannot run until we hand control
+       * back, so spinning here froze the tab for good. */
       while (k)
 	{
+	  koules_yield ();
 	  UpdateInput ();
 	  k = Pressed ();
 #ifdef OS2DIVE
@@ -1073,6 +1078,7 @@ process_keys ()
 	}
       while (!k)
 	{
+	  koules_yield ();
 	  UpdateInput ();
 	  k = Pressed ();
 #ifdef OS2DIVE
@@ -1137,8 +1143,16 @@ process_keys ()
 	    {
 #endif
 	      gamemode = MENU;
+	      /* Swallow the ESC so the menu we are dropping into does
+	       * not act on it too. The original spun until the key came
+	       * up, which a browser can never report from inside a
+	       * blocking loop. */
+#ifdef SDLSUPPORT
+	      ClearKey (SDL_SCANCODE_ESCAPE);
+#else
 	      while (IsPressedEsc ())
 		UpdateInput ();
+#endif
 #ifdef NETSUPPORT
 	    }
 	  else

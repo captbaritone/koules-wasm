@@ -101,6 +101,7 @@ save_rc ()
   fwrite (zeros, 2, sizeof (float), controls);
 #endif
   fclose (controls);
+  koules_storage_sync_out (fullname);
   fullname[sizeof (fullname)-1] = '\0';
 #ifdef OS2DIVE
   snprintf (fullname, sizeof (fullname), "%s", levelsname);
@@ -125,6 +126,7 @@ save_rc ()
   fwrite (&gameplan, 1, sizeof (int), levels);
   fwrite (&difficulty, 1, sizeof (int), levels);
   fclose (levels);
+  koules_storage_sync_out (fullname);
 }
 
 
@@ -151,6 +153,7 @@ load_rc ()
       printf ("Home directory file name too long, using default controls.");
       return;
     }
+  koules_storage_sync_in (fullname);
   if ((controls = fopen (fullname, "r")) == NULL)
     {
       printf ("could not open save file:%s\n"
@@ -188,6 +191,7 @@ skip:;
       printf ("Home directory file name too long, using default controls.");
       return;
     }
+  koules_storage_sync_in (fullname);
   if ((levels = fopen (fullname, "r")) == NULL)
     {
       printf ("could not open save file:%s\n"
