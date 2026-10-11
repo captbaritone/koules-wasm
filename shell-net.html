@@ -38,6 +38,11 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   #status { font-size: 14px; min-height: 20px; }
+  #solo {
+    position: fixed; right: 12px; bottom: 8px;
+    color: #0a0; font-size: 12px; text-decoration: none; opacity: 0.6;
+  }
+  #solo:hover { opacity: 1; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -46,6 +51,7 @@
   <div>KOULES</div>
   <div id="status">Connecting...</div>
 </div>
+<a id="solo" href="/solo">single player</a>
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
 <script>
   /* ---- network transport (prototype) ----------------------------
