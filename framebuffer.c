@@ -379,6 +379,14 @@ createbackground ()
   int             x, y;
 #ifndef NODIRECT
   char           *pixel = background->vbuf;
+#else
+  /* Each pixel averages its left and upper neighbours. Without direct
+   * access those have to be remembered here: reading them back with
+   * SGetPixel maps a colour to the first palette index that matches it,
+   * and back(0) is the same black as index 0, so a darkest pixel came
+   * back as 0 and pushed its neighbours below back(0), into the yellow
+   * starwars ramp. */
+  unsigned char  *shade = calloc (MAPWIDTH, 1);
 #endif
   for (y = 0; y < MAPHEIGHT + 20; y++)
     for (x = 0; x < MAPWIDTH; x++)
@@ -391,7 +399,7 @@ createbackground ()
 #ifndef NODIRECT
 	    i += *(pixel - 1) - back (0);
 #else
-	    i += SGetPixel (x - 1, y) - back (0);
+	    i += shade[x - 1];
 #endif
 	    n++;
 	  }
@@ -400,7 +408,7 @@ createbackground ()
 #ifndef NODIRECT
 	    i += *(pixel - MAPWIDTH) - back (0);
 #else
-	    i += SGetPixel (x, y - 1) - back (0);
+	    i += shade[x];
 #endif
 	    n++;
 	  }
@@ -411,9 +419,13 @@ createbackground ()
 	*pixel = back (0) + c;
 	pixel++;
 #else
+	shade[x] = c;
 	SPutPixel (x, y, back (0) + c);
 #endif
       }
+#ifdef NODIRECT
+  free (shade);
+#endif
 }
 #else
 #ifdef MITSHM
