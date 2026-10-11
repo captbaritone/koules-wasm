@@ -38,6 +38,27 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   #status { font-size: 14px; min-height: 20px; }
+  /* Portrait phones: the 4:3 play field only fills the top of the
+   * screen, so pin it there and turn the space below into a touch pad
+   * for steering, where a thumb doesn't cover the action. */
+  #pad { display: none; }
+  @media (orientation: portrait) {
+    body { flex-direction: column; justify-content: flex-start; }
+    #loader { margin: auto; }
+    canvas.running ~ #pad {
+      display: flex; align-items: center; justify-content: center;
+      flex: 1; align-self: stretch; position: relative;
+      touch-action: none;
+      color: #345; font-size: 13px;
+    }
+  }
+  #pad.dragging #padhint { visibility: hidden; }
+  #ring, #knob {
+    position: absolute; border-radius: 50%; pointer-events: none;
+    transform: translate(-50%, -50%);
+  }
+  #ring { width: 88px; height: 88px; border: 2px solid rgba(255,255,255,0.3); }
+  #knob { width: 40px; height: 40px; background: rgba(255,255,255,0.55); }
 </style>
 </head>
 <body>
@@ -47,6 +68,11 @@
   <div id="status">Loading...</div>
 </div>
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<div id="pad">
+  <span id="padhint">drag here to steer</span>
+  <div id="ring" hidden></div>
+  <div id="knob" hidden></div>
+</div>
 <script>
   var loader = document.getElementById('loader');
   var statusEl = document.getElementById('status');
@@ -76,6 +102,54 @@
       setTimeout(show, 3000);
     }
   };
+</script>
+<script>
+  /* The touch pad below the play field in portrait. Its touches never
+   * reach SDL, so hand each drag to the game's virtual joystick
+   * (koules_touchpad in sdl/input.c) as an offset in game pixels. */
+  (function () {
+    var pad = document.getElementById('pad');
+    var ring = document.getElementById('ring');
+    var knob = document.getElementById('knob');
+    var finger = null, ox = 0, oy = 0;
+
+    function place(el, x, y) {
+      var r = pad.getBoundingClientRect();
+      el.style.left = (x - r.left) + 'px';
+      el.style.top = (y - r.top) + 'px';
+    }
+    function steer(active, x, y) {
+      var k = 640 / (canvas.clientWidth || 640);
+      if (Module._koules_touchpad)
+        Module._koules_touchpad(active, Math.round((x - ox) * k),
+                                Math.round((y - oy) * k));
+    }
+    pad.addEventListener('pointerdown', function (e) {
+      if (finger !== null) return;
+      finger = e.pointerId;
+      try { pad.setPointerCapture(finger); } catch (err) { }
+      ox = e.clientX; oy = e.clientY;
+      place(ring, ox, oy); place(knob, ox, oy);
+      ring.hidden = knob.hidden = false;
+      pad.classList.add('dragging');
+      steer(1, ox, oy);
+      e.preventDefault();
+    });
+    pad.addEventListener('pointermove', function (e) {
+      if (e.pointerId !== finger) return;
+      place(knob, e.clientX, e.clientY);
+      steer(1, e.clientX, e.clientY);
+    });
+    function release(e) {
+      if (e.pointerId !== finger) return;
+      finger = null;
+      ring.hidden = knob.hidden = true;
+      pad.classList.remove('dragging');
+      steer(0, ox, oy);
+    }
+    pad.addEventListener('pointerup', release);
+    pad.addEventListener('pointercancel', release);
+  })();
 </script>
 {{{ SCRIPT }}}
 </body>

@@ -49,11 +49,12 @@ static SDL_FingerID    joy_finger;	/* which one */
 static int             joy_ox, joy_oy;	/* drag origin, px */
 static int             joy_x, joy_y;	/* current finger pos, px */
 static int             tjoy_keys[4];	/* up, down, left, right */
+static int             pad_keys[4];	/* the same, from the page's pad */
 
 #define JOY_DEADZONE 16
 
 static void
-joy_update (int dx, int dy)
+joy_update (int *out, int dx, int dy)
 {
   int             want[4] = {0, 0, 0, 0};
   int             j;
@@ -70,7 +71,7 @@ joy_update (int dx, int dy)
 	want[3] = 1;
     }
   for (j = 0; j < 4; j++)
-    tjoy_keys[j] = want[j];
+    out[j] = want[j];
 }
 
 static void
@@ -82,6 +83,28 @@ joy_release (void)
     tjoy_keys[j] = 0;
   joy_active = 0;
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+/* In portrait the play field sits at the top of a phone screen and the
+ * page turns the empty space below it into a touch pad (shell.html), so
+ * a thumb can steer without covering the action. The pad lives outside
+ * the canvas, where SDL never sees its touches, so the page calls this
+ * instead: dx, dy are the drag from where the finger went down, in game
+ * pixels, and active = 0 lets go. It drives the same joystick, with its
+ * own state so a finger on the canvas and one on the pad don't fight. */
+EMSCRIPTEN_KEEPALIVE void
+koules_touchpad (int active, int dx, int dy)
+{
+  int             j;
+
+  if (active)
+    joy_update (pad_keys, dx, dy);
+  else
+    for (j = 0; j < 4; j++)
+      pad_keys[j] = 0;
+}
+#endif
 
 /* Draw the joystick indicator onto the presented frame. Called from
  * CopyToScreen() in draw.c after the game has been blitted. */
@@ -151,7 +174,7 @@ UpdateInput (void)
 	      joy_finger = event.tfinger.fingerId;
 	      joy_ox = joy_x = (int) (event.tfinger.x * MAPWIDTH);
 	      joy_oy = joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	      joy_update (0, 0);
+	      joy_update (tjoy_keys, 0, 0);
 	    }
 	  break;
 	case SDL_FINGERMOTION:
@@ -159,7 +182,7 @@ UpdateInput (void)
 	    {
 	      joy_x = (int) (event.tfinger.x * MAPWIDTH);
 	      joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	      joy_update (joy_x - joy_ox, joy_y - joy_oy);
+	      joy_update (tjoy_keys, joy_x - joy_ox, joy_y - joy_oy);
 	    }
 	  break;
 	case SDL_FINGERUP:
@@ -250,7 +273,7 @@ IsPressed (int key)
    * movement keys. Kept separate from pressed[] so touch and a
    * physical keyboard can never clobber each other. */
   for (j = 0; j < 4; j++)
-    if (key == keys[0][j] && tjoy_keys[j])
+    if (key == keys[0][j] && (tjoy_keys[j] || pad_keys[j]))
       return true;
   return false;
 }
