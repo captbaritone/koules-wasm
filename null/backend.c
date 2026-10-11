@@ -57,7 +57,6 @@ bool Pressed (void) { return false; }
 bool IsPressed (int key) { (void) key; return false; }
 void ClearKey (int key) { (void) key; }
 void ClearKeys (void) { }
-void DrawTouchOverlay (VScreenType s) { (void) s; }
 int IsPressedUp (void) { return 0; }
 int IsPressedDown (void) { return 0; }
 int IsPressedLeft (void) { return 0; }

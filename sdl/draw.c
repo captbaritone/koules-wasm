@@ -103,7 +103,6 @@ void
 CopyToScreen (VScreenType source)
 {
   SDL_BlitSurface (source, NULL, sdl_screen, NULL);
-  DrawTouchOverlay (sdl_screen);
   SDL_UpdateTexture (sdl_texture, NULL, sdl_screen->pixels,
 		     sdl_screen->pitch);
   SDL_RenderClear (sdl_renderer);

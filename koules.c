@@ -952,28 +952,23 @@ sprocess_keys ()
 	{
 	  switch (controls[i].type)
 	    {
-#ifdef JOYSTICK
 	    case C_JOYSTICK1:
 	      {
+		/* Point the way the stick points, and thrust in proportion
+		 * to how far it is pushed. A centred stick coasts and keeps
+		 * the old heading. */
 		double          a, x = controls[i].jx, y = controls[i].jy;
-		a = atan (fabs (y) / fabs (x));
-		if (x < 0 && y >= 0)
-		  object[i].rotation = a + RAD (90);
-		else if (x < 0 && y < 0)
-		  object[i].rotation = RAD (90) - a;
-		else if (x >= 0 && y < 0)
-		  object[i].rotation = a + RAD (270);
-		else if (x >= 0 && y >= 0)
-		  object[i].rotation = RAD (270) - a;
+		if (x == 0 && y == 0)
+		  break;
+		object[i].rotation = atan2 (-x, -y);
 		/* Measure the deflection (a is betw. 0 and 1) */
-  	        a=hypot(x*object[i].joymulx,y*object[i].joymuly);
+		a = hypot (x, y) / JOYFULL;
            	/* I must make sure, that I am not cheating :-)  */
 		/* "a" can't be bigger than one */
 	        if((a>1.0)||(controls[i].mask!=0))a=1.0;
-	        if(a>object[i].joythresh)accel(i,a);
+		accel (i, a);
 	      }
 	      break;
-#endif
 	    case C_MOUSE:
 	      {
 		double          dx, dy, a;
@@ -1041,6 +1036,10 @@ process_keys ()
 {
   int             i;
   static int lasth=0;
+#ifdef SDLSUPPORT
+  int             touchfree = 1;	/* the touch stick is still unclaimed */
+  int             tx, ty;
+#endif
 #ifdef JOYSTICK
   int             status;
   struct JS_DATA_TYPE js;
@@ -1113,12 +1112,15 @@ process_keys ()
 		{
 		  break;
 		}
-	      x = center[i][0] - js.x;
-	      y = center[i][1] - js.y;	       
-              if (x == 0)
-		x = 0.001;
-	      controls[joystickplayer[i]].jx = x;
-	      controls[joystickplayer[i]].jy = y;
+	      /* Normalise here, where the calibration lives: a network
+	       * server never sees it, and read raw counts as no
+	       * deflection at all. */
+	      x = (center[i][0] - js.x) * object[joystickplayer[i]].joymulx;
+	      y = (center[i][1] - js.y) * object[joystickplayer[i]].joymuly;
+	      if (hypot (x, y) <= object[joystickplayer[i]].joythresh)
+		x = y = 0;
+	      controls[joystickplayer[i]].jx = x * JOYFULL;
+	      controls[joystickplayer[i]].jy = y * JOYFULL;
 	      controls[joystickplayer[i]].mask = js.buttons;
 	      controls[joystickplayer[i]].type = C_JOYSTICK1;
 
@@ -1178,6 +1180,22 @@ process_keys ()
 #endif
 	  if (object[i].type != ROCKET)
 	    continue;
+#ifdef SDLSUPPORT
+	  /* A touchscreen's analog stick steers the first rocket played
+	   * from this machine, overriding its keys while a thumb is on it. */
+	  if (touchfree)
+	    {
+	      touchfree = 0;
+	      if (TouchStick (&tx, &ty))
+		{
+		  controls[i].type = C_JOYSTICK1;
+		  controls[i].jx = tx;
+		  controls[i].jy = ty;
+		  controls[i].mask = 0;
+		  continue;
+		}
+	    }
+#endif
 	  if (rotation[i])
 	    {
 	      char            s = 0;

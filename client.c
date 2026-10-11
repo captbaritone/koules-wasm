@@ -286,7 +286,7 @@ SendControls ()
 	      SendMouse (i, c[i].mx, c[i].my, c[i].mask);
 	      break;
 	    case C_JOYSTICK1:
-	      SendMouse (i, c[i].jx, c[i].jy, c[i].mask);
+	      SendJoystick (i, c[i].jx, c[i].jy, c[i].mask);
 	      break;
 	    }
 	}

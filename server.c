@@ -338,10 +338,11 @@ sjoystick (int client, unsigned char *message, int s)
   int             p, x;
   GETCHAR (message + 5, p);
   controls[p].type = C_JOYSTICK1;
+  /* The stick is signed; GETSHORT reads 16 bits unsigned. */
   GETSHORT (message, x);
-  controls[p].jx = x;
+  controls[p].jx = x >= 32768 ? x - 65536 : x;
   GETSHORT (message + 2, x);
-  controls[p].jy = x;
+  controls[p].jy = x >= 32768 ? x - 65536 : x;
   GETCHAR (message + 4, controls[p].mask);
 }
 void

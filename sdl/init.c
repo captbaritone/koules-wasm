@@ -113,8 +113,8 @@ initialize (void)
 {
   int             ret;
 
-  /* Taps also act as mouse clicks (menus); the in-game virtual
-   * joystick is handled separately from finger events in input.c. */
+  /* Taps act as mouse clicks, which is how the menus are played on a
+   * touchscreen. Steering is the page's analog stick (input.c). */
   SDL_SetHint (SDL_HINT_TOUCH_MOUSE_EVENTS, "1");
 
   ret = SDL_Init (SDL_INIT_VIDEO | SDL_INIT_AUDIO);

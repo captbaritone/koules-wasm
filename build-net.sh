@@ -79,7 +79,7 @@ emcc $SERVER_SOURCES $COMMON $SERVER_FLAGS \
 # sits at the root so its relative koules.js and sounds/ paths resolve.
 sh build-wasm.sh
 cp koules.html cf/public/solo.html
-cp koules.js koules.wasm cf/public/
+cp koules.js koules.wasm touchstick.js cf/public/
 cp koules-net.html cf/public/index.html
 cp koules-net.js cf/public/
 cp koules-net.wasm cf/public/

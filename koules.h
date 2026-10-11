@@ -136,6 +136,12 @@ extern int      nomouse;
 #define C_KEYBOARD 1
 #define C_RKEYBOARD 2
 #define C_JOYSTICK1 3
+/* C_JOYSTICK1 carries an analog stick in jx, jy: JOYFULL is full
+ * deflection, and the sign is the Linux driver's (centre minus
+ * position), so positive points left and up -- away from where the
+ * rocket goes. Whoever reads the stick normalises it, so the server
+ * needs no calibration of its own. */
+#define JOYFULL 1000
 #define C_JOYSTICK2 4
 #define C_MOUSE 5
 

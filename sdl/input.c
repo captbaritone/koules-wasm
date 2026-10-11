@@ -34,88 +34,45 @@ int             last_pressed;
 static int      mouse_clicked = 0;
 
 /*--------------------------------------------------------------------
- * Touch controls: a virtual 8-way joystick for player 1.
+ * Touch controls: an analog stick, drawn and tracked by the page.
  *
- * A finger drag anywhere on the screen drives player 1's configured
- * movement keys (arrows by default). Joystick state lives in tjoy_keys[]
- * and is merged into IsPressed(); it never touches pressed[], so a
- * physical keyboard and touch can't clobber each other.
- *
- * Menus keep working through SDL's touch-to-mouse emulation
- * (SDL_HINT_TOUCH_MOUSE_EVENTS, enabled in initialize()).
+ * touchstick.js floats a stick under the player's thumb and reports its
+ * deflection here, already normalised (see JOYFULL in koules.h). The
+ * game reads it through TouchStick() and steers with the analog
+ * joystick mode: heading follows the stick, thrust follows how far it
+ * is pushed. The page owns the touches themselves -- during play it
+ * keeps them from SDL, so they never turn into menu clicks.
  *--------------------------------------------------------------------*/
-static int             joy_active = 0;	/* a finger is down */
-static SDL_FingerID    joy_finger;	/* which one */
-static int             joy_ox, joy_oy;	/* drag origin, px */
-static int             joy_x, joy_y;	/* current finger pos, px */
-static int             tjoy_keys[4];	/* up, down, left, right */
-static int             pad_keys[4];	/* the same, from the page's pad */
+static int      stick_on = 0;
+static int      stick_x, stick_y;
 
-#define JOY_DEADZONE 16
-
-static void
-joy_update (int *out, int dx, int dy)
+/* Nonzero while a thumb is on the stick; fills in its deflection. */
+int
+TouchStick (int *x, int *y)
 {
-  int             want[4] = {0, 0, 0, 0};
-  int             j;
-
-  if (dx * dx + dy * dy >= JOY_DEADZONE * JOY_DEADZONE)
-    {
-      if (dy < -JOY_DEADZONE / 2)
-	want[0] = 1;
-      else if (dy > JOY_DEADZONE / 2)
-	want[1] = 1;
-      if (dx < -JOY_DEADZONE / 2)
-	want[2] = 1;
-      else if (dx > JOY_DEADZONE / 2)
-	want[3] = 1;
-    }
-  for (j = 0; j < 4; j++)
-    out[j] = want[j];
-}
-
-static void
-joy_release (void)
-{
-  int             j;
-
-  for (j = 0; j < 4; j++)
-    tjoy_keys[j] = 0;
-  joy_active = 0;
+  *x = stick_x;
+  *y = stick_y;
+  return stick_on;
 }
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-/* In portrait the play field sits at the top of a phone screen and the
- * page turns the empty space below it into a touch pad (shell.html), so
- * a thumb can steer without covering the action. The pad lives outside
- * the canvas, where SDL never sees its touches, so the page calls this
- * instead: dx, dy are the drag from where the finger went down, in game
- * pixels, and active = 0 lets go. It drives the same joystick, with its
- * own state so a finger on the canvas and one on the pad don't fight. */
 EMSCRIPTEN_KEEPALIVE void
-koules_touchpad (int active, int dx, int dy)
+koules_touchstick (int active, int x, int y)
 {
-  int             j;
+  stick_on = active;
+  stick_x = active ? x : 0;
+  stick_y = active ? y : 0;
+}
 
-  if (active)
-    joy_update (pad_keys, dx, dy);
-  else
-    for (j = 0; j < 4; j++)
-      pad_keys[j] = 0;
+/* Whether touches should steer rather than click: true in the game
+ * proper, false in the menus, which are played by tapping. */
+EMSCRIPTEN_KEEPALIVE int
+koules_playing (void)
+{
+  return gamemode == GAME;
 }
 #endif
-
-/* Draw the joystick indicator onto the presented frame. Called from
- * CopyToScreen() in draw.c after the game has been blitted. */
-void
-DrawTouchOverlay (VScreenType screen)
-{
-  if (!joy_active)
-    return;
-  circleColor (screen, joy_ox, joy_oy, 44, 0xffffff50);
-  filledCircleColor (screen, joy_x, joy_y, 18, 0xffffff90);
-}
 
 /* Forget every held key. Used when the window loses focus: the browser
  * stops sending us key events while another element has focus, so the
@@ -167,28 +124,6 @@ UpdateInput (void)
     {
       switch (event.type)
 	{
-	case SDL_FINGERDOWN:
-	  if (!joy_active)
-	    {
-	      joy_active = 1;
-	      joy_finger = event.tfinger.fingerId;
-	      joy_ox = joy_x = (int) (event.tfinger.x * MAPWIDTH);
-	      joy_oy = joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	      joy_update (tjoy_keys, 0, 0);
-	    }
-	  break;
-	case SDL_FINGERMOTION:
-	  if (joy_active && event.tfinger.fingerId == joy_finger)
-	    {
-	      joy_x = (int) (event.tfinger.x * MAPWIDTH);
-	      joy_y = (int) (event.tfinger.y * MAPHEIGHT);
-	      joy_update (tjoy_keys, joy_x - joy_ox, joy_y - joy_oy);
-	    }
-	  break;
-	case SDL_FINGERUP:
-	  if (joy_active && event.tfinger.fingerId == joy_finger)
-	    joy_release ();
-	  break;
 	case SDL_KEYDOWN:
 	  /* SDL2 delivers repeat events for held keys; the original
 	   * SDL 1.2 backend never saw them (repeat off by default).
@@ -231,7 +166,6 @@ UpdateInput (void)
 	  if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 	    {
 	      ClearKeys ();
-	      joy_release ();
 	    }
 	  break;
 	default:
@@ -252,29 +186,14 @@ GetKey (void)
 bool
 Pressed (void)
 {
-  int             j;
-
-  if (n_pressed > 0)
-    return true;
-  for (j = 0; j < 4; j++)
-    if (tjoy_keys[j])
-      return true;
-  return false;
+  return n_pressed > 0;
 }
 
 bool
 IsPressed (int key)
 {
-  int             j;
-
   if (key >= 0 && key < SDL_NUM_SCANCODES && pressed[key] > 0)
     return true;
-  /* Merge the virtual joystick: it drives player 1's configured
-   * movement keys. Kept separate from pressed[] so touch and a
-   * physical keyboard can never clobber each other. */
-  for (j = 0; j < 4; j++)
-    if (key == keys[0][j] && (tjoy_keys[j] || pad_keys[j]))
-      return true;
   return false;
 }
 

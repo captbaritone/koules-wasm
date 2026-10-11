@@ -68,7 +68,7 @@ bool            Pressed (void);
 bool            IsPressed (int);
 void            ClearKey (int);
 void            ClearKeys (void);
-void            DrawTouchOverlay (VScreenType);
+int             TouchStick (int *, int *);
 int             IsPressedDown (void);
 int             IsPressedEnter (void);
 int             IsPressedEsc (void);
